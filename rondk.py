@@ -1,4 +1,4 @@
-# ==================== RONDK - Süleymanili Kız Bot ====================
+# ==================== RONDK - Süleymanili Kız Bot (ÖZEL HIZLI) ====================
 import os
 import json
 import random
@@ -30,7 +30,7 @@ class RondkBot:
     def __init__(self):
         self.isim = "Rondk"
         self.yas = 23
-        self.sehir = "Süleymaniye"  # DÜZELTİLDİ
+        self.sehir = "Süleymani"
         
         # İsim varyasyonları
         self.isim_varyasyonlari = [
@@ -40,12 +40,10 @@ class RondkBot:
         
         # Dosya yolları
         self.kullanicilar_file = 'kullanicilar.json'
-        self.kuyruk_file = 'kuyruk.json'
         self.konusmalar_file = 'konusmalar.json'
         
         # Verileri yükle
         self.kullanicilar = self.dosya_yukle(self.kullanicilar_file, {})
-        self.kuyruk = self.dosya_yukle(self.kuyruk_file, [])
         self.konusmalar = self.dosya_yukle(self.konusmalar_file, {})
         
         logger.info(f"🤫 {self.isim} başlatılıyor... (Yaş: {self.yas}, Şehir: {self.sehir})")
@@ -66,29 +64,8 @@ class RondkBot:
     def su_an(self):
         return datetime.now(IRAQ_TZ)
     
-    def saat_kontrol(self):
-        saat = self.su_an().hour
-        dakika = self.su_an().minute
-        toplam_dakika = saat * 60 + dakika
-        
-        # Sabah namazından sonra (05:00 - 15:00)
-        if 300 <= toplam_dakika < 900:
-            return "uyuyor", 10*60*60  # 10 saat
-        
-        # Öğleden sonra (15:00 - 18:00)
-        elif 900 <= toplam_dakika < 1080:
-            return "uyanik", random.randint(300, 1800)
-        
-        # Akşam (18:00 - 00:00)
-        elif 1080 <= toplam_dakika < 1440:
-            return "aktif", random.randint(300, 600)
-        
-        # Gece (00:00 - 05:00)
-        else:
-            return "dedikodu", random.randint(60, 300)
-    
     def dil_tani(self, metin):
-        kurtce_kelimeler = ['erê', 'na', 'slaw', 'çoni', 'başim', 'spas', 'min', 'rondk']
+        kurtce_kelimeler = ['erê', 'na', 'slaw', 'çoni', 'başim', 'spas', 'min']
         for kelime in kurtce_kelimeler:
             if kelime in metin.lower():
                 return "kurtce"
@@ -102,9 +79,16 @@ class RondkBot:
                 return True
         return False
     
-    async def cevap_ver(self, update, context, bekleme_suresi):
-        await asyncio.sleep(bekleme_suresi)
-        
+    async def gemini_cevap_al(self, prompt):
+        """Gemini'den cevap al, hata olursa None döndür"""
+        try:
+            response = model.generate_content(prompt)
+            return response.text[:300]  # Çok uzun olmasın
+        except Exception as e:
+            logger.error(f"Gemini hatası: {e}")
+            return None
+    
+    async def cevap_ver(self, update, context):
         mesaj = update.message
         kullanici = mesaj.from_user
         kullanici_id = str(kullanici.id)
@@ -124,19 +108,16 @@ class RondkBot:
         self.dosya_kaydet(self.kullanicilar_file, self.kullanicilar)
         
         dil = self.dil_tani(metin)
-        durum, _ = self.saat_kontrol()
         
         # Yapay zeka prompt'u
         prompt = f"""
-Sen 23 yaşında, Süleymaniyeli bir kızsın. İsmin Rondk.
+Sen 23 yaşında, Süleymanili bir kızsın. İsmin Rondk.
 Kişiliğin: Sessiz, gözlemci, dedikoducu (ama seçici), mantıklı.
 Sadece sana seslenildiğinde veya mesajın yanıtlandığında konuşuyorsun.
-Gece yarısı (00:00-05:00) daha konuşkan ve dedikoducusun.
-Sabah namazından sonra (05:00-15:00) uyuyorsun.
+Şu an özel sohbet desin, samimi ve doğal konuş.
 
-Şu an: {durum}
 Saat: {self.su_an().strftime('%H:%M')}
-Şehir: Süleymaniye
+Şehir: Süleymani
 Kullanıcı: {kullanici.first_name}
 Mesajı: "{metin}"
 Dili: {dil}
@@ -144,31 +125,21 @@ Dili: {dil}
 Kısa ve doğal cevap ver (bot olduğunu belli etme):
 """
         
-        try:
-            response = model.generate_content(prompt)
-            cevap = response.text[:300]
-        except Exception as e:
-            logger.error(f"Gemini hatası: {e}")
-            hazir_cevaplar = [
-                "Slaw, çonî?",
-                "Başim, tu çonî?",
-                "Evet, haklısın.",
-                "Yok ya öyle deme.",
-                "Bence de.",
-                "Valla bilmiyorum."
-            ]
-            cevap = random.choice(hazir_cevaplar)
+        # Gemini'den cevap al
+        cevap = await self.gemini_cevap_al(prompt)
         
-        await mesaj.reply_text(cevap)
-        
-        # Konuşmayı kaydet
-        self.konusmalar[f"{kullanici_id}_{self.su_an().timestamp()}"] = {
-            'kullanici': kullanici_id,
-            'mesaj': metin,
-            'cevap': cevap,
-            'zaman': self.su_an().isoformat()
-        }
-        self.dosya_kaydet(self.konusmalar_file, self.konusmalar)
+        # Eğer cevap geldiyse gönder
+        if cevap:
+            await mesaj.reply_text(cevap)
+            
+            # Konuşmayı kaydet
+            self.konusmalar[f"{kullanici_id}_{self.su_an().timestamp()}"] = {
+                'kullanici': kullanici_id,
+                'mesaj': metin,
+                'cevap': cevap,
+                'zaman': self.su_an().isoformat()
+            }
+            self.dosya_kaydet(self.konusmalar_file, self.konusmalar)
     
     async def handle_message(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
         # Sadece grup ve özel mesajlar
@@ -204,35 +175,35 @@ Kısa ve doğal cevap ver (bot olduğunu belli etme):
         # Özel sohbet kontrolü
         ozel_sohbet = update.effective_chat.type == 'private'
         
-        durum, bekleme = self.saat_kontrol()
+        # Sabah namazı kontrolü (05:00-15:00)
+        saat = self.su_an().hour
+        uyuyor_mu = 5 <= saat < 15
         
-        # Uyuyorsa kuyruğa ekle
-        if durum == "uyuyor" and (etiket_var or isim_var or yanit_var or ozel_sohbet):
-            logger.info(f"Mesaj kuyruğa eklendi: {kullanici.first_name}")
-            self.kuyruk.append({
-                'update': update.to_dict(),
-                'zaman': self.su_an().isoformat(),
-                'bekleme': bekleme
-            })
-            self.dosya_kaydet(self.kuyruk_file, self.kuyruk)
+        # Uyuyorsa ve özel değilse cevap verme
+        if uyuyor_mu and not ozel_sohbet:
             return
         
         # Konuşma kontrolü
         konusacak_mi = False
+        bekleme_suresi = 0
         
-        if etiket_var or isim_var or yanit_var or ozel_sohbet:
-            konusacak_mi = True  # Direkt seslenilince %100
-        elif durum == "dedikodu" and random.random() < 0.5:
-            konusacak_mi = True  # Gece %50 konuşur
-        elif random.random() < 0.1:
-            konusacak_mi = True  # Normalde %10
+        if ozel_sohbet:
+            # Özelde her zaman konuş, 1-3 saniye bekle
+            konusacak_mi = True
+            bekleme_suresi = random.randint(1, 3)
+        elif etiket_var or isim_var or yanit_var:
+            # Grupta etiket varsa konuş, 3-8 saniye bekle
+            konusacak_mi = True
+            bekleme_suresi = random.randint(3, 8)
+        elif random.random() < 0.05:  # %5 ihtimalle kendiliğinden
+            konusacak_mi = True
+            bekleme_suresi = random.randint(5, 15)
         
         if konusacak_mi:
-            asyncio.create_task(self.cevap_ver(update, context, bekleme))
-    
-    async def kuyruk_kontrol(self, context):
-        logger.info("Kuyruk kontrol ediliyor...")
-        # Kuyruk işleme kodunu buraya ekleyebilirsin
+            # Bekleme süresi kadar bekle
+            await asyncio.sleep(bekleme_suresi)
+            # Cevap ver
+            await self.cevap_ver(update, context)
     
     def run(self):
         app = Application.builder().token(TOKEN).build()
