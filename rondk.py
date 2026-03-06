@@ -30,9 +30,9 @@ class RondkBot:
     def __init__(self):
         self.isim = "Rondk"
         self.yas = 23
-        self.sehir = "Süleymani"  # Değiştirildi
+        self.sehir = "Süleymaniye"  # DÜZELTİLDİ
         
-        # İsim varyasyonları (bunlara da cevap ver)
+        # İsim varyasyonları
         self.isim_varyasyonlari = [
             "rondk", "rndo", "rnde", "rund", "روندك",
             "Rondk", "Rndo", "Rnde", "Rund", "روندك"
@@ -128,7 +128,7 @@ class RondkBot:
         
         # Yapay zeka prompt'u
         prompt = f"""
-Sen 23 yaşında, Süleymanili bir kızsın. İsmin Rondk.
+Sen 23 yaşında, Süleymaniyeli bir kızsın. İsmin Rondk.
 Kişiliğin: Sessiz, gözlemci, dedikoducu (ama seçici), mantıklı.
 Sadece sana seslenildiğinde veya mesajın yanıtlandığında konuşuyorsun.
 Gece yarısı (00:00-05:00) daha konuşkan ve dedikoducusun.
@@ -136,12 +136,12 @@ Sabah namazından sonra (05:00-15:00) uyuyorsun.
 
 Şu an: {durum}
 Saat: {self.su_an().strftime('%H:%M')}
-Şehir: Süleymani
+Şehir: Süleymaniye
 Kullanıcı: {kullanici.first_name}
 Mesajı: "{metin}"
 Dili: {dil}
 
-Kısa ve doğal cevap ver (bot olduğunu belli etme). Süleymani aksanıyla konuş:
+Kısa ve doğal cevap ver (bot olduğunu belli etme):
 """
         
         try:
@@ -155,8 +155,7 @@ Kısa ve doğal cevap ver (bot olduğunu belli etme). Süleymani aksanıyla konu
                 "Evet, haklısın.",
                 "Yok ya öyle deme.",
                 "Bence de.",
-                "Valla bilmiyorum.",
-                "Heval, çi dibêjî?"
+                "Valla bilmiyorum."
             ]
             cevap = random.choice(hazir_cevaplar)
         
@@ -190,7 +189,7 @@ Kısa ve doğal cevap ver (bot olduğunu belli etme). Süleymani aksanıyla konu
         if metin.startswith('/'):
             return
         
-        # Bot etiketlenmiş mi? (normal etiket)
+        # Bot etiketlenmiş mi?
         bot_etiket = f"@{context.bot.username}"
         etiket_var = bot_etiket in metin
         
@@ -209,8 +208,9 @@ Kısa ve doğal cevap ver (bot olduğunu belli etme). Süleymani aksanıyla konu
         
         # Uyuyorsa kuyruğa ekle
         if durum == "uyuyor" and (etiket_var or isim_var or yanit_var or ozel_sohbet):
+            logger.info(f"Mesaj kuyruğa eklendi: {kullanici.first_name}")
             self.kuyruk.append({
-                'update_id': update.update_id,
+                'update': update.to_dict(),
                 'zaman': self.su_an().isoformat(),
                 'bekleme': bekleme
             })
@@ -228,31 +228,15 @@ Kısa ve doğal cevap ver (bot olduğunu belli etme). Süleymani aksanıyla konu
             konusacak_mi = True  # Normalde %10
         
         if konusacak_mi:
-            await self.cevap_ver(update, context, bekleme)
+            asyncio.create_task(self.cevap_ver(update, context, bekleme))
     
     async def kuyruk_kontrol(self, context):
-        yeni_kuyruk = []
-        for kayit in self.kuyruk:
-            giris_zamani = datetime.fromisoformat(kayit['zaman'])
-            gecen_sure = (self.su_an() - giris_zamani).total_seconds()
-            
-            if gecen_sure >= kayit['bekleme']:
-                logger.info("Kuyruktan mesaj işlendi (basit versiyon)")
-            else:
-                yeni_kuyruk.append(kayit)
-        
-        self.kuyruk = yeni_kuyruk
-        self.dosya_kaydet(self.kuyruk_file, self.kuyruk)
+        logger.info("Kuyruk kontrol ediliyor...")
+        # Kuyruk işleme kodunu buraya ekleyebilirsin
     
     def run(self):
         app = Application.builder().token(TOKEN).build()
         app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, self.handle_message))
-        
-        job_queue = app.job_queue
-        if job_queue:
-            job_queue.run_repeating(self.kuyruk_kontrol, interval=300, first=10)
-        else:
-            logger.warning("JobQueue kurulamadı, kuyruk sistemi çalışmayacak")
         
         logger.info(f"🚀 {self.isim} çalışıyor... (Şehir: {self.sehir})")
         app.run_polling()
