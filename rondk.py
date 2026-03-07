@@ -1,4 +1,4 @@
-# ==================== RONDK - Süleymanili Kız Bot ====================
+# ==================== RONDK - DeepSeek AI ile ====================
 import os
 import json
 import random
@@ -9,11 +9,10 @@ import fcntl
 from datetime import datetime, timedelta, timezone
 from telegram import Update
 from telegram.ext import Application, MessageHandler, filters, ContextTypes
-import google.generativeai as genai
+import openai  # DeepSeek için OpenAI kütüphanesi
 
 # ==================== TEK İNSTANCE KİLİDİ ====================
 def tek_instance_kontrol():
-    """Botun tek bir instance çalışmasını sağla"""
     lock_file = '/tmp/rondk.lock'
     try:
         fp = open(lock_file, 'w')
@@ -31,7 +30,7 @@ if not tek_instance_kontrol():
 
 # ==================== AYARLAR ====================
 TOKEN = os.environ.get('BOT_TOKEN')
-GEMINI_KEY = os.environ.get('GEMINI_KEY')
+DEEPSEEK_KEY = os.environ.get('DEEPSEEK_KEY')  # DeepSeek API anahtarı
 GROUP_ID = int(os.environ.get('GROUP_ID', 0))
 
 # Irak Saati
@@ -65,23 +64,28 @@ class RondkBot:
         self.kullanicilar = self.dosya_yukle(self.kullanicilar_file, {})
         self.konusmalar = self.dosya_yukle(self.konusmalar_file, {})
         
-        # Gemini'yi ayarla
-        logger.info("🤖 Gemini başlatılıyor...")
-        self.model = None
+        # DeepSeek AI'yi ayarla
+        logger.info("🤖 DeepSeek başlatılıyor...")
+        self.ai_available = False
         try:
-            if GEMINI_KEY:
-                genai.configure(api_key=GEMINI_KEY)
-                # Yeni model adı (gemini-1.5-flash)
-                self.model = genai.GenerativeModel('models/gemini-1.5-flash')
-                logger.info("✅ Gemini başarıyla ayarlandı")
+            if DEEPSEEK_KEY:
+                self.ds_client = openai.OpenAI(
+                    api_key=DEEPSEEK_KEY,
+                    base_url="https://api.deepseek.com/v1"
+                )
+                logger.info("✅ DeepSeek başarıyla ayarlandı")
                 
                 # Test mesajı
-                test = self.model.generate_content("Merhaba, test mesajı. Kısa cevap ver.")
-                logger.info(f"✅ Gemini test başarılı: {test.text[:50]}")
+                test = self.ai_konus("Merhaba, kısa bir test cevabı ver.")
+                if test:
+                    logger.info(f"✅ DeepSeek test başarılı: {test[:50]}...")
+                    self.ai_available = True
+                else:
+                    logger.error("❌ DeepSeek test başarısız!")
             else:
-                logger.error("❌ GEMINI_KEY bulunamadı!")
+                logger.error("❌ DEEPSEEK_KEY bulunamadı!")
         except Exception as e:
-            logger.error(f"❌ Gemini başlatılamadı: {e}")
+            logger.error(f"❌ DeepSeek başlatılamadı: {e}")
         
         logger.info(f"🤫 {self.isim} başlatılıyor... (Yaş: {self.yas}, Şehir: {self.sehir})")
     
@@ -127,21 +131,32 @@ class RondkBot:
                 return True
         return False
     
-    async def gemini_cevap_al(self, prompt):
-        """Gemini'den cevap al"""
-        if not self.model:
-            logger.error("❌ Gemini modeli hazır değil!")
+    def ai_konus(self, prompt):
+        """DeepSeek AI ile konuş"""
+        if not hasattr(self, 'ds_client'):
+            logger.error("❌ DeepSeek client hazır değil!")
             return None
         
         try:
-            logger.info("🤔 Gemini düşünüyor...")
-            response = self.model.generate_content(prompt)
-            if response and response.text:
-                logger.info(f"✅ Gemini cevap verdi: {response.text[:50]}...")
-                return response.text[:500]
-            return None
+            response = self.ds_client.chat.completions.create(
+                model="deepseek-chat",
+                messages=[
+                    {"role": "system", "content": f"""
+Sen 23 yaşında, Süleymanili bir kızsın. İsmin Rondk.
+Kişiliğin: Sessiz, gözlemci, mantıklı.
+Sadece sana seslenildiğinde konuşuyorsun.
+Şu an sohbet ediyorsun, samimi ve doğal konuş.
+Süleymani aksanıyla konuş, bazen Kürtçe kelimeler kullan.
+SAKIN bot olduğunu belli etme!
+                     """},
+                    {"role": "user", "content": prompt}
+                ],
+                temperature=0.8,
+                max_tokens=200
+            )
+            return response.choices[0].message.content
         except Exception as e:
-            logger.error(f"❌ Gemini hatası: {e}")
+            logger.error(f"❌ DeepSeek hatası: {e}")
             return None
     
     async def cevap_ver(self, update, context):
@@ -166,26 +181,15 @@ class RondkBot:
         self.kullanicilar[kullanici_id]['son_gorusme'] = self.su_an().isoformat()
         self.dosya_kaydet(self.kullanicilar_file, self.kullanicilar)
         
-        dil = self.dil_tani(metin)
-        
-        # Yapay zeka prompt'u
+        # DeepSeek'e sor
         prompt = f"""
-Sen 23 yaşında, Süleymanili bir kızsın. İsmin Rondk.
-Kişiliğin: Sessiz, gözlemci, mantıklı.
-Sadece sana seslenildiğinde konuşuyorsun.
-Şu an sohbet ediyorsun, samimi ve doğal konuş.
-
-Saat: {self.su_an().strftime('%H:%M')}
-Şehir: Süleymani
 Kullanıcı: {kullanici.first_name}
 Mesajı: "{metin}"
-Dili: {dil}
 
-Kısa ve doğal bir cevap ver (sakın bot olduğunu belli etme):
+Kısa ve doğal bir cevap ver:
 """
         
-        # Gemini'den cevap al
-        cevap = await self.gemini_cevap_al(prompt)
+        cevap = self.ai_konus(prompt)
         
         if cevap:
             await mesaj.reply_text(cevap)
@@ -201,13 +205,12 @@ Kısa ve doğal bir cevap ver (sakın bot olduğunu belli etme):
             self.dosya_kaydet(self.konusmalar_file, self.konusmalar)
         else:
             logger.error("❌ Cevap alınamadı, hazır cevap veriliyor")
-            # Gemini çalışmazsa basit cevap ver
             basit_cevaplar = [
-                "Slaw, çonî?",
-                "Başim, tu çonî?",
-                "Evet haklısın",
+                "Slaw, çonî? 🤔",
+                "Başim, tu çonî? 😊",
+                "Evet haklısın canım",
                 "Yok ya öyle deme",
-                "Bence de"
+                "Bence de katılıyorum"
             ]
             await mesaj.reply_text(random.choice(basit_cevaplar))
     
@@ -285,7 +288,7 @@ Kısa ve doğal bir cevap ver (sakın bot olduğunu belli etme):
         logger.info(f"🚀 {self.isim} çalışıyor... (Şehir: {self.sehir})")
         print(f"🤖 {self.isim} botu başlatıldı!")
         print(f"📊 Grup ID: {GROUP_ID}")
-        print(f"✅ Gemini: {'ÇALIŞIYOR' if self.model else 'ÇALIŞMIYOR'}")
+        print(f"✅ DeepSeek: {'ÇALIŞIYOR' if self.ai_available else 'ÇALIŞMIYOR'}")
         
         app.run_polling()
 
@@ -296,13 +299,11 @@ if __name__ == "__main__":
     
     if not TOKEN:
         print("❌ HATA: BOT_TOKEN bulunamadı!")
-        print("📝 Railway'de Variables sekmesine BOT_TOKEN ekleyin")
         exit(1)
     
-    if not GEMINI_KEY:
-        print("⚠️ UYARI: GEMINI_KEY bulunamadı!")
-        print("📝 Railway'de Variables sekmesine GEMINI_KEY ekleyin")
-        print("⚠️ Gemini olmadan sınırlı çalışacak")
+    if not DEEPSEEK_KEY:
+        print("⚠️ UYARI: DEEPSEEK_KEY bulunamadı!")
+        print("📝 Railway'de Variables sekmesine DEEPSEEK_KEY ekleyin")
     
     bot = RondkBot()
     bot.run()
