@@ -1,3 +1,10 @@
+# Gemini test
+print("🧪 Gemini test ediliyor...")
+try:
+    test = model.generate_content("Merhaba, 2+2 kaç?")
+    print(f"✅ Gemini çalışıyor: {test.text}")
+except Exception as e:
+    print(f"❌ Gemini HATASI: {e}")
 # ==================== RONDK - Süleymanili Kız Bot ====================
 import os
 import json
