@@ -4,10 +4,30 @@ import json
 import random
 import asyncio
 import logging
+import sys
+import fcntl
 from datetime import datetime, timedelta, timezone
 from telegram import Update
 from telegram.ext import Application, MessageHandler, filters, ContextTypes
 import google.generativeai as genai
+
+# ==================== TEK İNSTANCE KİLİDİ ====================
+def tek_instance_kontrol():
+    """Botun tek bir instance çalışmasını sağla"""
+    lock_file = '/tmp/rondk.lock'
+    try:
+        fp = open(lock_file, 'w')
+        fcntl.flock(fp, fcntl.LOCK_EX | fcntl.LOCK_NB)
+        fp.write(str(os.getpid()))
+        fp.flush()
+        return True
+    except IOError:
+        print("❌ Bot zaten çalışıyor! Çıkılıyor...")
+        return False
+
+if not tek_instance_kontrol():
+    exit(1)
+# ============================================================
 
 # ==================== AYARLAR ====================
 TOKEN = os.environ.get('BOT_TOKEN')
@@ -45,7 +65,7 @@ class RondkBot:
         self.kullanicilar = self.dosya_yukle(self.kullanicilar_file, {})
         self.konusmalar = self.dosya_yukle(self.konusmalar_file, {})
         
-        # Gemini'yi ayarla (DÜZELTİLDİ)
+        # Gemini'yi ayarla
         logger.info("🤖 Gemini başlatılıyor...")
         self.model = None
         try:
