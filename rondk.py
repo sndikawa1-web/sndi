@@ -1,4 +1,4 @@
-# ==================== RONDK - Groq AI ile ====================
+# ==================== RONDK - Profesyonel AI Kız Bot ====================
 import os
 import json
 import random
@@ -7,6 +7,7 @@ import logging
 import sys
 import fcntl
 from datetime import datetime, timedelta, timezone
+from collections import defaultdict
 from telegram import Update
 from telegram.ext import Application, MessageHandler, filters, ContextTypes
 from groq import Groq
@@ -59,10 +60,18 @@ class RondkBot:
         # Dosya yolları
         self.kullanicilar_file = 'kullanicilar.json'
         self.konusmalar_file = 'konusmalar.json'
+        self.profiller_file = 'profiller.json'
+        self.istatistik_file = 'istatistik.json'
         
         # Verileri yükle
         self.kullanicilar = self.dosya_yukle(self.kullanicilar_file, {})
         self.konusmalar = self.dosya_yukle(self.konusmalar_file, {})
+        self.profiller = self.dosya_yukle(self.profiller_file, {})
+        self.istatistik = self.dosya_yukle(self.istatistik_file, {
+            'toplam_konusma': 0,
+            'populer_kelimeler': {},
+            'aktif_saatler': defaultdict(int)
+        })
         
         # Groq AI'yi ayarla
         logger.info("🤖 Groq başlatılıyor...")
@@ -83,6 +92,29 @@ class RondkBot:
                 logger.error("❌ GROQ_KEY bulunamadı!")
         except Exception as e:
             logger.error(f"❌ Groq başlatılamadı: {e}")
+        
+        # Süleymani'ye özel veriler
+        self.suleymani_ozel = {
+            "yemek": ["kleftiko", "dolma", "kebap", "biryan", "sambusa"],
+            "mekan": ["çavılanda", "bazar", "gölyan", "şehitler", "süleymani park"],
+            "olay": [
+                "dün akşam çavılanda yangın çıkmış",
+                "bazar'da indirim var",
+                "gölyan'da düğün vardı",
+                "yeni kafe açılmış"
+            ]
+        }
+        
+        # Özel günler
+        self.ozel_gunler = {
+            "01-01": "yılbaşı",
+            "21-03": "nevroz",
+            "01-05": "işçi bayramı",
+            "15-08": "kurtuluş günü"
+        }
+        
+        # Kişiye özel selamlar
+        self.kisiye_ozel_selam = {}
         
         logger.info(f"🤫 {self.isim} başlatılıyor... (Yaş: {self.yas}, Şehir: {self.sehir})")
     
@@ -111,9 +143,23 @@ class RondkBot:
         """Şu anki Irak saatini ver"""
         return datetime.now(IRAQ_TZ)
     
+    def zaman_selami(self):
+        """Saate göre selam ver"""
+        saat = self.su_an().hour
+        if saat < 10:
+            return "günaydın canım 🌅"
+        elif saat < 14:
+            return "merhabaa 😊"
+        elif saat < 18:
+            return "tünaydınn ✨"
+        elif saat < 22:
+            return "iyi akşamlar 🌙"
+        else:
+            return "gece gece ne yapıyorsun? 🦉"
+    
     def dil_tani(self, metin):
         """Metnin dilini tespit et"""
-        kurtce_kelimeler = ['erê', 'na', 'slaw', 'çoni', 'başim', 'spas', 'min']
+        kurtce_kelimeler = ['erê', 'na', 'slaw', 'çoni', 'başim', 'spas', 'min', 'wa', 'ka', 'de']
         metin_lower = metin.lower()
         for kelime in kurtce_kelimeler:
             if kelime in metin_lower:
@@ -128,44 +174,154 @@ class RondkBot:
                 return True
         return False
     
-    def ai_konus(self, prompt):
-        """Groq AI ile konuş (GÜNCELLENMİŞ MODEL)"""
+    def ruh_hali_analizi(self, metin):
+        """Metinden ruh halini analiz et"""
+        mutlu = ['😂', '😊', '😁', 'iyi', 'güzel', 'harika', 'süper']
+        uzgun = ['😢', '😭', '😔', 'kötü', 'berbat', 'üzgün', 'canım sıkkın']
+        mutlu_soz = ['aferin', 'tebrikler', 'sevindim']
+        
+        metin_lower = metin.lower()
+        for kelime in mutlu + mutlu_soz:
+            if kelime in metin_lower:
+                return "mutlu"
+        for kelime in uzgun:
+            if kelime in metin_lower:
+                return "uzgun"
+        return "normal"
+    
+    def ozel_gun_kontrol(self):
+        """Bugün özel gün mü?"""
+        bugun = self.su_an().strftime("%d-%m")
+        return self.ozel_gunler.get(bugun)
+    
+    def kelime_ogren(self, metin):
+        """Kullanıcının sık kullandığı kelimeleri öğren"""
+        for kelime in metin.lower().split():
+            if len(kelime) > 3:
+                self.istatistik['populer_kelimeler'][kelime] = self.istatistik['populer_kelimeler'].get(kelime, 0) + 1
+    
+    def kullanici_profili_guncelle(self, kullanici_id, isim, metin, ruh_hali):
+        """Kullanıcı profilini güncelle"""
+        if kullanici_id not in self.profiller:
+            self.profiller[kullanici_id] = {
+                'isim': isim,
+                'ilk_gorusme': self.su_an().isoformat(),
+                'konusma_sayisi': 0,
+                'ruh_hali': ruh_hali,
+                'son_konu': metin[:50],
+                'bilinenler': [],
+                'ozel_notlar': {}
+            }
+        
+        profil = self.profiller[kullanici_id]
+        profil['konusma_sayisi'] += 1
+        profil['son_gorusme'] = self.su_an().isoformat()
+        profil['ruh_hali'] = ruh_hali
+        profil['son_konu'] = metin[:50]
+        
+        self.dosya_kaydet(self.profiller_file, self.profiller)
+    
+    def ai_konus(self, prompt, kullanici_adi=None, ruh_hali=None, ozel_gun=None):
+        """Groq AI ile konuş (Profesyonel versiyon)"""
         if not hasattr(self, 'groq_client'):
-            logger.error("❌ Groq client hazır değil!")
             return None
         
-        try:
-            # GÜNCELLENMİŞ MODEL: llama3-8b-8192 (en güncel ve stabil)
-            response = self.groq_client.chat.completions.create(
-                model="llama-3.3-70b-versatile",  # Groq'un en yeni modeli
-                messages=[
-                    {"role": "system", "content": f"""
+        # Kişiye özel selam
+        kisi_selam = ""
+        if kullanici_adi and kullanici_adi in self.kisiye_ozel_selam:
+            kisi_selam = self.kisiye_ozel_selam[kullanici_adi]
+        
+        # Özel gün mesajı
+        ozel_gun_msg = f"Bu arada bugün {ozel_gun}! " if ozel_gun else ""
+        
+        # Ruh haline göre ek
+        ruh_mesaj = {
+            "mutlu": "Karşımdaki mutlu görünüyor, ona uygun neşeli cevap ver.",
+            "uzgun": "Karşımdaki üzgün görünüyor, ona destek ol, teselli et.",
+            "normal": "Normal sohbet ediyoruz."
+        }.get(ruh_hali, "")
+        
+        # Rastgele Süleymani olayı
+        suleymani_olay = ""
+        if random.random() < 0.15:  # %15 ihtimalle
+            olay = random.choice(self.suleymani_ozel['olay'])
+            suleymani_olay = f" Bu arada {olay}."
+        
+        system_prompt = f"""
 Sen 23 yaşında, Süleymanili bir kızsın. İsmin Rondk.
-Kişiliğin: Sessiz, gözlemci, mantıklı.
-Sadece sana seslenildiğinde konuşuyorsun.
-Şu an sohbet ediyorsun, samimi ve doğal konuş.
-Süleymani aksanıyla konuş, bazen Kürtçe kelimeler kullan.
-SAKIN bot olduğunu belli etme!
-Cümlelerin kısa ve doğal olsun, çok resmi konuşma.
-                     """},
-                    {"role": "user", "content": prompt}
-                ],
-                temperature=0.8,
-                max_tokens=150
-            )
-            return response.choices[0].message.content
+Kimliğin: Ne bileyim işte, sessiz biraz ama konuşunca konuşurum.
+Şey... genelde pek karışmam ama biri seslenirse cevap veririm.
+
+ÖZEL DURUM: {ozel_gun_msg} {ruh_mesaj} {suleymani_olay}
+KİŞİYE ÖZEL: {kisi_selam}
+
+NASIL KONUŞMAMALI:
+- Çok resmi konuşma ("merhaba", "nasılsınız" falan deme)
+- Uzun cümleler kurma
+- Çok mantıklı olma
+- Bot gibi cevap verme
+
+NASIL KONUŞMALI:
+- "valla", "ya", "işte", "şey" gibi kelimeler kullan
+- Bazen imla hatası yap (çünkü telefondan yazıyoruz)
+- Kısa cevaplar ver
+- "🤔", "😅", "😂", "😊", "🥰" gibi emojiler kullan
+- Bazen anlamasan bile "hele", "hıı", "öyle mi" de
+- Ara sıra Kürtçe kelime kullan ("wa", "erê", "slaw", "spas")
+
+ÖRNEK DOĞAL KONUŞMALAR:
+- "valla bilmiom ki 🤔"
+- "hele bi düşüniiim..."
+- "öyle mi? ben hiç farketmedm 😅"
+- "ya bence de"
+- "hıı anladm"
+- "ne diyorsun yaa"
+- "slaw canım naber? 😊"
+- "wa gerçekten mi?"
+
+SAKIN AMA SAKIN robot gibi konuşma! Normal bir kız gibi konuş.
+
+Şimdi şu mesaja cevap ver: {prompt}
+"""
+        
+        try:
+            # Denenecek modeller
+            modeller = ["llama-3.3-70b-versatile", "llama-3.1-8b-instant"]
+            
+            for model in modeller:
+                try:
+                    response = self.groq_client.chat.completions.create(
+                        model=model,
+                        messages=[
+                            {"role": "system", "content": system_prompt},
+                            {"role": "user", "content": prompt}
+                        ],
+                        temperature=0.9,  # Biraz daha yaratıcı
+                        max_tokens=150
+                    )
+                    return response.choices[0].message.content
+                except:
+                    continue
+            
+            return None
         except Exception as e:
             logger.error(f"❌ Groq hatası: {e}")
             return None
     
     async def cevap_ver(self, update, context):
-        """Mesaja cevap ver"""
+        """Mesaja cevap ver (Profesyonel versiyon)"""
         mesaj = update.message
         kullanici = mesaj.from_user
         kullanici_id = str(kullanici.id)
         metin = mesaj.text or ""
         
         logger.info(f"💬 Cevap veriliyor: {kullanici.first_name} - {metin[:50]}")
+        
+        # İstatistik güncelle
+        self.istatistik['toplam_konusma'] += 1
+        self.istatistik['aktif_saatler'][self.su_an().hour] += 1
+        self.kelime_ogren(metin)
+        self.dosya_kaydet(self.istatistik_file, self.istatistik)
         
         # Kullanıcıyı kaydet
         if kullanici_id not in self.kullanicilar:
@@ -180,24 +336,47 @@ Cümlelerin kısa ve doğal olsun, çok resmi konuşma.
         self.kullanicilar[kullanici_id]['son_gorusme'] = self.su_an().isoformat()
         self.dosya_kaydet(self.kullanicilar_file, self.kullanicilar)
         
-        # Kullanıcının dilini tespit et
+        # Ruh hali analizi
+        ruh_hali = self.ruh_hali_analizi(metin)
+        
+        # Kullanıcı profilini güncelle
+        self.kullanici_profili_guncelle(kullanici_id, kullanici.first_name, metin, ruh_hali)
+        
+        # Özel gün kontrolü
+        ozel_gun = self.ozel_gun_kontrol()
+        
+        # Dil tespiti
         dil = self.dil_tani(metin)
+        
+        # Zaman selamı (bazen ekle)
+        zaman_selami = ""
+        if random.random() < 0.2:  # %20 ihtimalle
+            zaman_selami = self.zaman_selami() + " "
         
         # AI için prompt hazırla
         prompt = f"""
 Kullanıcı: {kullanici.first_name}
 Mesajı: "{metin}"
 Dili: {dil}
+Ruh hali: {ruh_hali}
 
-Bu mesaja kısa, samimi ve doğal bir cevap ver. 
+Bu mesaja kısa, samimi ve doğal bir cevap ver.
 Eğer mesaj Kürtçe ise Kürtçe cevap ver, Türkçe ise Türkçe cevap ver.
 Çok kısa ve öz ol, sanki arkadaşınla konuşuyormuşsun gibi.
 """
         
-        cevap = self.ai_konus(prompt)
+        cevap = self.ai_konus(prompt, kullanici.first_name, ruh_hali, ozel_gun)
         
         if cevap:
-            await mesaj.reply_text(cevap)
+            # Bazen cevabı biraz değiştir
+            if random.random() < 0.1:
+                cevap += " " + random.choice(["😊", "🥰", "🤔", "😅", "😂"])
+            
+            # Bazen soruya soruyla cevap ver
+            if random.random() < 0.03 and '?' in metin:
+                cevap += " sen ne düşünüyosun peki?"
+            
+            await mesaj.reply_text(zaman_selami + cevap)
             logger.info(f"✅ Cevap gönderildi: {cevap[:50]}...")
             
             # Konuşmayı kaydet
@@ -205,23 +384,21 @@ Eğer mesaj Kürtçe ise Kürtçe cevap ver, Türkçe ise Türkçe cevap ver.
                 'kullanici': kullanici_id,
                 'mesaj': metin,
                 'cevap': cevap,
+                'ruh_hali': ruh_hali,
                 'zaman': self.su_an().isoformat()
             }
             self.dosya_kaydet(self.konusmalar_file, self.konusmalar)
         else:
             logger.error("❌ Cevap alınamadı, hazır cevap veriliyor")
-            # Yedek hazır cevaplar (AI çalışmazsa)
             basit_cevaplar = [
-                "Slaw, çonî? 🤔",
-                "Başim, tu çonî? 😊",
-                "Evet haklısın canım",
-                "Yok ya öyle deme",
-                "Bence de katılıyorum",
-                "Valla bilmiyorum ki",
-                "Ne diyorsun anlamadım",
-                "Hadi ya öyle mi?",
-                "Çok ilginç gerçekten",
-                "Sen ne dersin peki?"
+                "valla bilmiom ki 🤔",
+                "hele bi düşüniiim...",
+                "öyle mi? ben hiç farketmedm 😅",
+                "ya bence de",
+                "hıı anladm",
+                "ne diyorsun yaa",
+                "slaw canım naber? 😊",
+                "wa gerçekten mi?"
             ]
             await mesaj.reply_text(random.choice(basit_cevaplar))
     
@@ -270,21 +447,21 @@ Eğer mesaj Kürtçe ise Kürtçe cevap ver, Türkçe ise Türkçe cevap ver.
             logger.info(f"😴 {self.isim} uyuyor, cevap vermedi")
             return
         
-        # Konuşma kontrolü
+        # Konuşma kontrolü - Daha doğal bekleme süreleri
         konusacak_mi = False
         bekleme_suresi = 0
         
         if ozel_sohbet:
             konusacak_mi = True
-            bekleme_suresi = random.randint(1, 3)
+            bekleme_suresi = random.randint(2, 6)  # 2-6 saniye
             logger.info(f"💬 Özel sohbet, {bekleme_suresi}s sonra cevap verecek")
         elif etiket_var or isim_var or yanit_var:
             konusacak_mi = True
-            bekleme_suresi = random.randint(3, 8)
+            bekleme_suresi = random.randint(4, 12)  # 4-12 saniye
             logger.info(f"🏷️ Etiket var, {bekleme_suresi}s sonra cevap verecek")
         elif random.random() < 0.05:  # %5 ihtimalle kendiliğinden
             konusacak_mi = True
-            bekleme_suresi = random.randint(5, 15)
+            bekleme_suresi = random.randint(8, 20)  # 8-20 saniye
             logger.info(f"🎲 Rastgele, {bekleme_suresi}s sonra cevap verecek")
         
         if konusacak_mi:
@@ -297,27 +474,27 @@ Eğer mesaj Kürtçe ise Kürtçe cevap ver, Türkçe ise Türkçe cevap ver.
         app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, self.handle_message))
         
         logger.info(f"🚀 {self.isim} çalışıyor... (Şehir: {self.sehir})")
+        print("="*50)
         print(f"🤖 {self.isim} botu başlatıldı!")
         print(f"📊 Grup ID: {GROUP_ID}")
         print(f"✅ Groq: {'ÇALIŞIYOR' if self.ai_available else 'ÇALIŞMIYOR'}")
-        print(f"🤖 Kullanılan model: llama3-8b-8192")
+        print(f"🧠 Hafıza: {len(self.profiller)} kişi tanıyor")
+        print(f"💬 Toplam konuşma: {self.istatistik['toplam_konusma']}")
+        print("="*50)
         
         app.run_polling()
 
 
 # ==================== BAŞLAT ====================
 if __name__ == "__main__":
-    print("🔧 Bot başlatılıyor...")
+    print("🔧 Rondk Profesyonel versiyon başlatılıyor...")
     
     if not TOKEN:
         print("❌ HATA: BOT_TOKEN bulunamadı!")
-        print("📝 Railway'de Variables sekmesine BOT_TOKEN ekleyin")
         exit(1)
     
     if not GROQ_KEY:
         print("⚠️ UYARI: GROQ_KEY bulunamadı!")
-        print("📝 Railway'de Variables sekmesine GROQ_KEY ekleyin")
-        print("⚠️ Groq olmadan sınırlı çalışacak")
     
     bot = RondkBot()
     bot.run()
