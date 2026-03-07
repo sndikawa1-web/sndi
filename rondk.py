@@ -137,7 +137,7 @@ class RondkBot:
         try:
             # GÜNCELLENMİŞ MODEL: llama3-8b-8192 (en güncel ve stabil)
             response = self.groq_client.chat.completions.create(
-                model="llama3-8b-8192",  # Değiştirildi: eski model kullanımdan kalkmıştı
+                model="llama-3.3-70b-versatile",  # Groq'un en yeni modeli
                 messages=[
                     {"role": "system", "content": f"""
 Sen 23 yaşında, Süleymanili bir kızsın. İsmin Rondk.
