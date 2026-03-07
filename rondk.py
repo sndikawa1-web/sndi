@@ -87,6 +87,7 @@ class RondkBot:
         logger.info(f"🤫 {self.isim} başlatılıyor... (Yaş: {self.yas}, Şehir: {self.sehir})")
     
     def dosya_yukle(self, dosya_adi, varsayilan):
+        """JSON dosyasını yükle, yoksa oluştur"""
         try:
             with open(dosya_adi, 'r', encoding='utf-8') as f:
                 return json.load(f)
@@ -99,6 +100,7 @@ class RondkBot:
             return varsayilan
     
     def dosya_kaydet(self, dosya_adi, veri):
+        """JSON dosyasına kaydet"""
         try:
             with open(dosya_adi, 'w', encoding='utf-8') as f:
                 json.dump(veri, f, ensure_ascii=False, indent=2)
@@ -106,9 +108,11 @@ class RondkBot:
             logger.error(f"Dosya kaydetme hatası {dosya_adi}: {e}")
     
     def su_an(self):
+        """Şu anki Irak saatini ver"""
         return datetime.now(IRAQ_TZ)
     
     def dil_tani(self, metin):
+        """Metnin dilini tespit et"""
         kurtce_kelimeler = ['erê', 'na', 'slaw', 'çoni', 'başim', 'spas', 'min']
         metin_lower = metin.lower()
         for kelime in kurtce_kelimeler:
@@ -117,6 +121,7 @@ class RondkBot:
         return "turkce"
     
     def isim_var_mi(self, metin):
+        """Metinde Rondk'un isim varyasyonları var mı?"""
         metin_lower = metin.lower()
         for isim in self.isim_varyasyonlari:
             if isim.lower() in metin_lower:
@@ -124,14 +129,15 @@ class RondkBot:
         return False
     
     def ai_konus(self, prompt):
-        """Groq AI ile konuş"""
+        """Groq AI ile konuş (GÜNCELLENMİŞ MODEL)"""
         if not hasattr(self, 'groq_client'):
             logger.error("❌ Groq client hazır değil!")
             return None
         
         try:
+            # GÜNCELLENMİŞ MODEL: llama3-8b-8192 (en güncel ve stabil)
             response = self.groq_client.chat.completions.create(
-                model="mixtral-8x7b-32768",  # En hızlı model
+                model="llama3-8b-8192",  # Değiştirildi: eski model kullanımdan kalkmıştı
                 messages=[
                     {"role": "system", "content": f"""
 Sen 23 yaşında, Süleymanili bir kızsın. İsmin Rondk.
@@ -140,11 +146,12 @@ Sadece sana seslenildiğinde konuşuyorsun.
 Şu an sohbet ediyorsun, samimi ve doğal konuş.
 Süleymani aksanıyla konuş, bazen Kürtçe kelimeler kullan.
 SAKIN bot olduğunu belli etme!
+Cümlelerin kısa ve doğal olsun, çok resmi konuşma.
                      """},
                     {"role": "user", "content": prompt}
                 ],
                 temperature=0.8,
-                max_tokens=200
+                max_tokens=150
             )
             return response.choices[0].message.content
         except Exception as e:
@@ -152,6 +159,7 @@ SAKIN bot olduğunu belli etme!
             return None
     
     async def cevap_ver(self, update, context):
+        """Mesaja cevap ver"""
         mesaj = update.message
         kullanici = mesaj.from_user
         kullanici_id = str(kullanici.id)
@@ -159,6 +167,7 @@ SAKIN bot olduğunu belli etme!
         
         logger.info(f"💬 Cevap veriliyor: {kullanici.first_name} - {metin[:50]}")
         
+        # Kullanıcıyı kaydet
         if kullanici_id not in self.kullanicilar:
             self.kullanicilar[kullanici_id] = {
                 'isim': kullanici.first_name,
@@ -171,19 +180,27 @@ SAKIN bot olduğunu belli etme!
         self.kullanicilar[kullanici_id]['son_gorusme'] = self.su_an().isoformat()
         self.dosya_kaydet(self.kullanicilar_file, self.kullanicilar)
         
+        # Kullanıcının dilini tespit et
+        dil = self.dil_tani(metin)
+        
+        # AI için prompt hazırla
         prompt = f"""
 Kullanıcı: {kullanici.first_name}
 Mesajı: "{metin}"
+Dili: {dil}
 
-Kısa ve doğal bir cevap ver:
+Bu mesaja kısa, samimi ve doğal bir cevap ver. 
+Eğer mesaj Kürtçe ise Kürtçe cevap ver, Türkçe ise Türkçe cevap ver.
+Çok kısa ve öz ol, sanki arkadaşınla konuşuyormuşsun gibi.
 """
         
         cevap = self.ai_konus(prompt)
         
         if cevap:
             await mesaj.reply_text(cevap)
-            logger.info(f"✅ Cevap gönderildi")
+            logger.info(f"✅ Cevap gönderildi: {cevap[:50]}...")
             
+            # Konuşmayı kaydet
             self.konusmalar[f"{kullanici_id}_{self.su_an().timestamp()}"] = {
                 'kullanici': kullanici_id,
                 'mesaj': metin,
@@ -193,19 +210,29 @@ Kısa ve doğal bir cevap ver:
             self.dosya_kaydet(self.konusmalar_file, self.konusmalar)
         else:
             logger.error("❌ Cevap alınamadı, hazır cevap veriliyor")
+            # Yedek hazır cevaplar (AI çalışmazsa)
             basit_cevaplar = [
                 "Slaw, çonî? 🤔",
                 "Başim, tu çonî? 😊",
                 "Evet haklısın canım",
                 "Yok ya öyle deme",
-                "Bence de katılıyorum"
+                "Bence de katılıyorum",
+                "Valla bilmiyorum ki",
+                "Ne diyorsun anlamadım",
+                "Hadi ya öyle mi?",
+                "Çok ilginç gerçekten",
+                "Sen ne dersin peki?"
             ]
             await mesaj.reply_text(random.choice(basit_cevaplar))
     
     async def handle_message(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
+        """Gelen mesajları işle"""
+        
+        # Sadece grup ve özel mesajlar
         if update.effective_chat.type not in ['group', 'supergroup', 'private']:
             return
         
+        # Kendi mesajlarına cevap verme
         if update.effective_user.id == context.bot.id:
             return
         
@@ -215,26 +242,35 @@ Kısa ve doğal bir cevap ver:
         
         metin = mesaj.text
         
+        # Komutları cevaplama
         if metin.startswith('/'):
             return
         
+        # Bot etiketlenmiş mi?
         bot_etiket = f"@{context.bot.username}"
         etiket_var = bot_etiket in metin
+        
+        # İsim varyasyonları var mı?
         isim_var = self.isim_var_mi(metin)
         
+        # Mesaj yanıtlanmış mı?
         yanit_var = False
         if mesaj.reply_to_message and mesaj.reply_to_message.from_user.id == context.bot.id:
             yanit_var = True
         
+        # Özel sohbet kontrolü
         ozel_sohbet = update.effective_chat.type == 'private'
         
+        # Sabah namazı kontrolü (05:00-15:00)
         saat = self.su_an().hour
         uyuyor_mu = 5 <= saat < 15
         
+        # Uyuyorsa ve özel değilse cevap verme
         if uyuyor_mu and not ozel_sohbet:
             logger.info(f"😴 {self.isim} uyuyor, cevap vermedi")
             return
         
+        # Konuşma kontrolü
         konusacak_mi = False
         bekleme_suresi = 0
         
@@ -246,7 +282,7 @@ Kısa ve doğal bir cevap ver:
             konusacak_mi = True
             bekleme_suresi = random.randint(3, 8)
             logger.info(f"🏷️ Etiket var, {bekleme_suresi}s sonra cevap verecek")
-        elif random.random() < 0.05:
+        elif random.random() < 0.05:  # %5 ihtimalle kendiliğinden
             konusacak_mi = True
             bekleme_suresi = random.randint(5, 15)
             logger.info(f"🎲 Rastgele, {bekleme_suresi}s sonra cevap verecek")
@@ -256,6 +292,7 @@ Kısa ve doğal bir cevap ver:
             await self.cevap_ver(update, context)
     
     def run(self):
+        """Botu başlat"""
         app = Application.builder().token(TOKEN).build()
         app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, self.handle_message))
         
@@ -263,6 +300,7 @@ Kısa ve doğal bir cevap ver:
         print(f"🤖 {self.isim} botu başlatıldı!")
         print(f"📊 Grup ID: {GROUP_ID}")
         print(f"✅ Groq: {'ÇALIŞIYOR' if self.ai_available else 'ÇALIŞMIYOR'}")
+        print(f"🤖 Kullanılan model: llama3-8b-8192")
         
         app.run_polling()
 
@@ -273,11 +311,13 @@ if __name__ == "__main__":
     
     if not TOKEN:
         print("❌ HATA: BOT_TOKEN bulunamadı!")
+        print("📝 Railway'de Variables sekmesine BOT_TOKEN ekleyin")
         exit(1)
     
     if not GROQ_KEY:
         print("⚠️ UYARI: GROQ_KEY bulunamadı!")
         print("📝 Railway'de Variables sekmesine GROQ_KEY ekleyin")
+        print("⚠️ Groq olmadan sınırlı çalışacak")
     
     bot = RondkBot()
     bot.run()
