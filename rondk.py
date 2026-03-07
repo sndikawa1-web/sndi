@@ -66,7 +66,7 @@ class RondkBot:
         try:
             if GEMINI_KEY:
                 genai.configure(api_key=GEMINI_KEY)
-                self.model = genai.GenerativeModel('gemini-pro')
+                self.model = genai.GenerativeModel('models/gemini-1.5-pro')
                 logger.info("✅ Gemini başarıyla ayarlandı")
                 
                 # Test mesajı
