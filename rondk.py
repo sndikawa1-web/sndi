@@ -23,7 +23,22 @@ logging.basicConfig(
     format='%(asctime)s - %(name)s - %(levelname)s - %(message)s'
 )
 logger = logging.getLogger(__name__)
+# ==================== GEMİNİ TEST ====================
+print("🔧 Gemini test başlıyor...")
+print(f"GEMINI_KEY var mı: {'EVET' if GEMINI_KEY else 'HAYIR'}")
+if GEMINI_KEY:
+    print(f"GEMINI_KEY uzunluğu: {len(GEMINI_KEY)}")
+    print(f"GEMINI_KEY ilk 10 karakter: {GEMINI_KEY[:10]}...")
 
+try:
+    import google.generativeai as genai
+    genai.configure(api_key=GEMINI_KEY)
+    model = genai.GenerativeModel('gemini-pro')
+    response = model.generate_content("Merhaba, 2+2 kaç?")
+    print(f"✅ Gemini BAŞARILI! Cevap: {response.text}")
+except Exception as e:
+    print(f"❌ Gemini HATASI: {e}")
+# =================================================
 # ==================== RONDK ====================
 class RondkBot:
     def __init__(self):
