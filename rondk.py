@@ -102,6 +102,13 @@ class RondkBot:
             'asi': 'Dinamit Rondk 🔥'
         }
         
+        # Oyunlar
+        self.oyunlar = {
+            'yazı_tura': lambda: random.choice(['yazı', 'tura']),
+            'zar': lambda: str(random.randint(1, 6)),
+            'taş_kağıt_makas': lambda: random.choice(['taş ✊', 'kağıt ✋', 'makas ✌️'])
+        }
+        
         # Groq AI'yi ayarla
         logger.info("🤖 Groq başlatılıyor...")
         self.ai_available = False
@@ -166,13 +173,6 @@ class RondkBot:
             "bazar": "📍 Büyük Bazar, Süleymani",
             "gölyan": "📍 Gölyan Parkı, Süleymani",
             "pira": "📍 Pira Mağarası"
-        }
-        
-        # Oyunlar
-        self.oyunlar = {
-            "yazı_tura": lambda: random.choice(["yazı", "tura"]),
-            "zar": lambda: random.randint(1, 6),
-            "taş_kağıt_makas": lambda: random.choice(["taş ✊", "kağıt ✋", "makas ✌️"])
         }
         
         # Rüya tabirleri
@@ -481,14 +481,24 @@ SAKIN AMA SAKIN robot gibi konuşma! Normal bir kız gibi konuş.
             logger.error(f"❌ Groq hatası: {e}")
             return None
     
-    async def cevap_ver(self, update, context):
-        """Mesaja cevap ver (Profesyonel versiyon)"""
-        mesaj = update.message
-        kullanici = mesaj.from_user
-        kullanici_id = str(kullanici.id)
-        metin = mesaj.text or ""
+    async def handle_message(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
+        """Gelen mesajları işle - KOMUT ve KONUŞMA DENGELİ"""
         
-        logger.info(f"💬 Cevap veriliyor: {kullanici.first_name} - {metin[:50]}")
+        # Sadece grup ve özel mesajlar
+        if update.effective_chat.type not in ['group', 'supergroup', 'private']:
+            return
+        
+        # Kendi mesajlarına cevap verme
+        if update.effective_user.id == context.bot.id:
+            return
+        
+        mesaj = update.message
+        if not mesaj or not mesaj.text:
+            return
+        
+        metin = mesaj.text.strip()
+        kullanici = update.effective_user
+        kullanici_id = str(kullanici.id)
         
         # Günlük sayaçları sıfırla
         self.gunluk_sifirla()
@@ -527,158 +537,60 @@ SAKIN AMA SAKIN robot gibi konuşma! Normal bir kız gibi konuş.
         # Özel gün kontrolü
         ozel_gun = self.ozel_gun_kontrol()
         
-        # Doğum günü kontrolü
-        dogumlular = self.dogum_gunu_kontrol()
-        if kullanici_id in dogumlular:
-            dogum_mesaji = f"🎂 {kullanici.first_name} doğum günün kutlu olsun! nice yıllara 🥳"
-            await mesaj.reply_text(dogum_mesaji)
-            return
+        # Doğum günü kontrolü (sadece özel günlerde)
+        if ozel_gun == "doğum_günü":
+            dogumlular = self.dogum_gunu_kontrol()
+            if kullanici_id in dogumlular:
+                await mesaj.reply_text(f"🎂 {kullanici.first_name} doğum günün kutlu olsun! 🥳")
+                # Doğum günü mesajından sonra konuşmaya devam
         
-        # Dil tespiti
-        dil = self.dil_tani(metin)
-        
-        # Zaman selamı (bazen ekle)
-        zaman_selami = ""
-        if random.random() < 0.2:  # %20 ihtimalle
-            zaman_selami = self.zaman_selami() + " "
-        
-        # Özel komutlar
-        if metin.startswith('/mod'):
-            mod = metin.replace('/mod', '').strip().lower()
-            if mod in self.modlar:
-                self.kisilik['mod'] = mod
-                self.dosya_kaydet(self.kisilik_file, self.kisilik)
-                await mesaj.reply_text(f"Mod {self.modlar[mod]} olarak değiştirildi! 😊")
-                return
-        
-        elif metin.startswith('/dogumgunu'):
-            tarih = metin.replace('/dogumgunu', '').strip()
-            self.dogumgunleri[kullanici_id] = tarih
-            self.dosya_kaydet(self.dogumgunleri_file, self.dogumgunleri)
-            await mesaj.reply_text(f"Doğum günün {tarih} olarak kaydedildi! 🎂")
-            return
-        
-        elif "oyun" in metin.lower() and ("ne" in metin or "var" in metin):
-            oyun_list = ", ".join(self.oyunlar.keys())
-            await mesaj.reply_text(f"Oynayabileceğimiz oyunlar: {oyun_list}. Hangisini istersin? 🎮")
-            return
-        
-        elif "yazı tura" in metin.lower():
-            await mesaj.reply_text(f"Sonuç: {self.oyunlar['yazı_tura']()} 🪙")
-            return
-        
-        elif "zar" in metin.lower():
-            await mesaj.reply_text(f"Zar: {self.oyunlar['zar']()} 🎲")
-            return
-        
-        elif "taş kağıt makas" in metin.lower():
-            await mesaj.reply_text(f"Ben: {self.oyunlar['taş_kağıt_makas']()} ✨")
-            return
-        
-        elif "fal" in metin.lower():
-            await mesaj.reply_text(random.choice(self.fallar))
-            return
-        
-        elif "rüya" in metin.lower() or "düş" in metin.lower():
-            for kelime, tabir in self.ruya_tabirleri.items():
-                if kelime in metin.lower():
-                    await mesaj.reply_text(f"Rüyanda {kelime} görmüşsün, {tabir}")
-                    return
-            await mesaj.reply_text("Rüyan neydi? Yorumlayayım 🔮")
-            return
-        
-        elif "nerdesin" in metin.lower():
-            mekan = random.choice(list(self.konumlar.keys()))
-            await mesaj.reply_text(f"{self.konumlar[mekan]}'dayım şu an, gelirsen konuşuruz 😊")
-            return
-        
-        elif "foto" in metin.lower() or "fotoğraf" in metin.lower():
-            foto = random.choice(list(self.fotograflar.keys()))
-            await mesaj.reply_text(self.fotograflar[foto])
-            return
-        
-        elif "müzik" in metin.lower() or "şarkı" in metin.lower():
-            sarki = random.choice(list(self.sarkilar.keys()))
-            await mesaj.reply_text(f"{sarki} dinle bence çok güzel {self.sarkilar[sarki]}")
-            return
-        
-        elif "görev" in metin.lower():
-            gorev = random.choice(list(self.gorevler_listesi.values()))
-            await mesaj.reply_text(f"Bugünkü görevin: {gorev}")
-            return
-        
-        # AI için prompt hazırla
-        prompt = f"""
-Kullanıcı: {kullanici.first_name}
-Mesajı: "{metin}"
-Dili: {dil}
-Ruh hali: {ruh_hali}
-
-Bu mesaja kısa, samimi ve doğal bir cevap ver.
-Eğer mesaj Kürtçe ise Kürtçe cevap ver, Türkçe ise Türkçe cevap ver.
-Çok kısa ve öz ol, sanki arkadaşınla konuşuyormuşsun gibi.
-"""
-        
-        cevap = self.ai_konus(prompt, kullanici.first_name, ruh_hali, ozel_gun)
-        
-        if cevap:
-            # Bazen cevabı biraz değiştir
-            if random.random() < 0.1:
-                cevap += " " + random.choice(["😊", "🥰", "🤔", "😅", "😂"])
-            
-            # Bazen soruya soruyla cevap ver
-            if random.random() < 0.03 and '?' in metin:
-                cevap += " sen ne düşünüyosun peki?"
-            
-            await mesaj.reply_text(zaman_selami + cevap)
-            logger.info(f"✅ Cevap gönderildi: {cevap[:50]}...")
-            
-            # Konuşmayı kaydet
-            self.konusmalar[f"{kullanici_id}_{self.su_an().timestamp()}"] = {
-                'kullanici': kullanici_id,
-                'mesaj': metin,
-                'cevap': cevap,
-                'ruh_hali': ruh_hali,
-                'zaman': self.su_an().isoformat()
-            }
-            self.dosya_kaydet(self.konusmalar_file, self.konusmalar)
-        else:
-            logger.error("❌ Cevap alınamadı, hazır cevap veriliyor")
-            basit_cevaplar = [
-                "valla bilmiom ki 🤔",
-                "hele bi düşüniiim...",
-                "öyle mi? ben hiç farketmedm 😅",
-                "ya bence de",
-                "hıı anladm",
-                "ne diyorsun yaa",
-                "slaw canım naber? 😊",
-                "wa gerçekten mi?",
-                "ya öyle deme üzülürüm 😔",
-                "çok sevindim duyduğuma 🥰"
-            ]
-            await mesaj.reply_text(random.choice(basit_cevaplar))
-    
-    async def handle_message(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
-        """Gelen mesajları işle"""
-        
-        # Sadece grup ve özel mesajlar
-        if update.effective_chat.type not in ['group', 'supergroup', 'private']:
-            return
-        
-        # Kendi mesajlarına cevap verme
-        if update.effective_user.id == context.bot.id:
-            return
-        
-        mesaj = update.message
-        if not mesaj or not mesaj.text:
-            return
-        
-        metin = mesaj.text
-        
-        # Komutları cevaplama (özel komutlar hariç)
+        # ========== KOMUTLAR (SADECE / İLE BAŞLAYANLAR) ==========
         if metin.startswith('/'):
-            # Admin için günlük rapor
-            if metin == '/rapor' and update.effective_user.id == ADMIN_ID:
+            komut = metin[1:].split()[0].lower()
+            
+            # /mod komutu
+            if komut == 'mod':
+                args = metin.split()
+                if len(args) > 1:
+                    mod = args[1].lower()
+                    if mod in self.modlar:
+                        self.kisilik['mod'] = mod
+                        self.dosya_kaydet(self.kisilik_file, self.kisilik)
+                        await mesaj.reply_text(f"Mod {self.modlar[mod]} olarak değiştirildi! 😊")
+                    else:
+                        await mesaj.reply_text(f"Kullanılabilir modlar: {', '.join(self.modlar.keys())}")
+                else:
+                    await mesaj.reply_text(f"Şu anki mod: {self.modlar[self.kisilik['mod']]}")
+                return
+            
+            # /dogumgunu komutu
+            elif komut == 'dogumgunu':
+                args = metin.split()
+                if len(args) > 1:
+                    tarih = args[1]
+                    self.dogumgunleri[kullanici_id] = tarih
+                    self.dosya_kaydet(self.dogumgunleri_file, self.dogumgunleri)
+                    await mesaj.reply_text(f"Doğum günün {tarih} olarak kaydedildi! 🎂")
+                else:
+                    await mesaj.reply_text("📝 Örnek: /dogumgunu 15.05")
+                return
+            
+            # /oyun komutu
+            elif komut == 'oyun':
+                args = metin.split()
+                if len(args) > 1:
+                    oyun = args[1].lower()
+                    if oyun in self.oyunlar:
+                        sonuc = self.oyunlar[oyun]()
+                        await mesaj.reply_text(f"Sonuç: {sonuc} 🎮")
+                    else:
+                        await mesaj.reply_text(f"Oyunlar: {', '.join(self.oyunlar.keys())}")
+                else:
+                    await mesaj.reply_text(f"Oyunlar: {', '.join(self.oyunlar.keys())}. Örnek: /oyun zar")
+                return
+            
+            # /rapor komutu (sadece admin)
+            elif komut == 'rapor' and kullanici_id == str(ADMIN_ID):
                 rapor = f"""
 📊 **GÜNLÜK RAPOR**
 👥 Bugün konuşan: {len(self.bugun_konusan)} kişi
@@ -686,10 +598,57 @@ Eğer mesaj Kürtçe ise Kürtçe cevap ver, Türkçe ise Türkçe cevap ver.
 🔥 En aktif saat: {max(self.istatistik['aktif_saatler'], key=self.istatistik['aktif_saatler'].get)}:00
 📈 Toplam konuşma: {self.istatistik['toplam_konusma']}
 🧠 Tanınan kişi: {len(self.profiller)}
+🎭 Mod: {self.modlar[self.kisilik['mod']]}
 """
                 await mesaj.reply_text(rapor)
                 return
-            return
+            
+            # Bilinmeyen komut
+            else:
+                await mesaj.reply_text("Hmm anlamadım? /mod, /oyun veya /dogumgunu yazabilirsin 🤔")
+                return
+        
+        # ========== NORMAL KONUŞMA KELİMELERİ ==========
+        # Burada return YOK, AI konuşmaya devam edecek
+        
+        # Fal bakma
+        if any(kelime in metin.lower() for kelime in ['fal', 'fal bak', 'falım']):
+            await mesaj.reply_text(random.choice(self.fallar))
+            # Konuşmaya devam, return yok!
+        
+        # Rüya tabiri
+        elif any(kelime in metin.lower() for kelime in ['rüya', 'düş', 'rüyamda']):
+            for kelime, tabir in self.ruya_tabirleri.items():
+                if kelime in metin.lower():
+                    await mesaj.reply_text(f"Rüyanda {kelime} görmüşsün, {tabir}")
+                    break
+            # Konuşmaya devam
+        
+        # Konum sorma
+        elif any(kelime in metin.lower() for kelime in ['nerdesin', 'nerede', 'nere']):
+            mekan = random.choice(list(self.konumlar.keys()))
+            await mesaj.reply_text(f"{self.konumlar[mekan]}'dayım şu an 😊")
+            # Konuşmaya devam
+        
+        # Fotoğraf isteme
+        elif any(kelime in metin.lower() for kelime in ['foto', 'fotoğraf', 'resim']):
+            foto = random.choice(list(self.fotograflar.keys()))
+            await mesaj.reply_text(self.fotograflar[foto])
+            # Konuşmaya devam
+        
+        # Müzik önerme
+        elif any(kelime in metin.lower() for kelime in ['müzik', 'şarkı', 'dinle']):
+            sarki = random.choice(list(self.sarkilar.keys()))
+            await mesaj.reply_text(f"{sarki} dinle bence çok güzel 🎵")
+            # Konuşmaya devam
+        
+        # Görev sorma
+        elif any(kelime in metin.lower() for kelime in ['görev', 'quest', 'yapmam']):
+            gorev = random.choice(list(self.gorevler_listesi.values()))
+            await mesaj.reply_text(f"Bugünkü görevin: {gorev}")
+            # Konuşmaya devam
+        
+        # ========== ANA KONUŞMA (AI) ==========
         
         # Bot etiketlenmiş mi?
         bot_etiket = f"@{context.bot.username}"
@@ -715,7 +674,7 @@ Eğer mesaj Kürtçe ise Kürtçe cevap ver, Türkçe ise Türkçe cevap ver.
             logger.info(f"😴 {self.isim} uyuyor, cevap vermedi")
             return
         
-        # Konuşma kontrolü - Daha doğal bekleme süreleri
+        # Konuşma kontrolü - Doğal bekleme süreleri
         konusacak_mi = False
         bekleme_suresi = 0
         
@@ -727,26 +686,70 @@ Eğer mesaj Kürtçe ise Kürtçe cevap ver, Türkçe ise Türkçe cevap ver.
             konusacak_mi = True
             bekleme_suresi = random.randint(4, 12)  # 4-12 saniye
             logger.info(f"🏷️ Etiket var, {bekleme_suresi}s sonra cevap verecek")
-        elif random.random() < 0.05:  # %5 ihtimalle kendiliğinden
+        elif random.random() < 0.1:  # %10 ihtimalle kendiliğinden
             konusacak_mi = True
             bekleme_suresi = random.randint(8, 20)  # 8-20 saniye
             logger.info(f"🎲 Rastgele, {bekleme_suresi}s sonra cevap verecek")
         
         if konusacak_mi:
             await asyncio.sleep(bekleme_suresi)
-            await self.cevap_ver(update, context)
+            
+            # AI için prompt hazırla
+            prompt = f"""
+Kullanıcı: {kullanici.first_name}
+Mesajı: "{metin}"
+Dili: {self.dil_tani(metin)}
+Ruh hali: {ruh_hali}
+
+Bu mesaja kısa, samimi ve doğal bir cevap ver.
+Eğer mesaj Kürtçe ise Kürtçe cevap ver, Türkçe ise Türkçe cevap ver.
+Çok kısa ve öz ol, sanki arkadaşınla konuşuyormuşsun gibi.
+"""
+            
+            cevap = self.ai_konus(prompt, kullanici.first_name, ruh_hali, ozel_gun)
+            
+            if cevap:
+                # Bazen cevabı biraz değiştir
+                if random.random() < 0.1:
+                    cevap += " " + random.choice(["😊", "🥰", "🤔", "😅", "😂"])
+                
+                # Bazen soruya soruyla cevap ver
+                if random.random() < 0.03 and '?' in metin:
+                    cevap += " sen ne düşünüyosun peki?"
+                
+                await mesaj.reply_text(cevap)
+                logger.info(f"✅ Cevap gönderildi: {cevap[:50]}...")
+                
+                # Konuşmayı kaydet
+                self.konusmalar[f"{kullanici_id}_{self.su_an().timestamp()}"] = {
+                    'kullanici': kullanici_id,
+                    'mesaj': metin,
+                    'cevap': cevap,
+                    'ruh_hali': ruh_hali,
+                    'zaman': self.su_an().isoformat()
+                }
+                self.dosya_kaydet(self.konusmalar_file, self.konusmalar)
+            else:
+                logger.error("❌ Cevap alınamadı, hazır cevap veriliyor")
+                basit_cevaplar = [
+                    "valla bilmiom ki 🤔",
+                    "hele bi düşüniiim...",
+                    "öyle mi? ben hiç farketmedm 😅",
+                    "ya bence de",
+                    "hıı anladm",
+                    "ne diyorsun yaa",
+                    "slaw canım naber? 😊",
+                    "wa gerçekten mi?",
+                    "ya öyle deme üzülürüm 😔",
+                    "çok sevindim duyduğuma 🥰"
+                ]
+                await mesaj.reply_text(random.choice(basit_cevaplar))
     
     def run(self):
         """Botu başlat"""
         app = Application.builder().token(TOKEN).build()
         
-        # Komutlar
-        app.add_handler(CommandHandler("mod", self.mod_komutu))
-        app.add_handler(CommandHandler("dogumgunu", self.dogumgunu_komutu))
-        app.add_handler(CommandHandler("rapor", self.rapor_komutu))
-        app.add_handler(CommandHandler("oyun", self.oyun_komutu))
-        
-        # Mesaj handler
+        # Handler'lar
         app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, self.handle_message))
         
         logger.info(f"🚀 {self.isim} 2.0 çalışıyor... (Şehir: {self.sehir})")
@@ -758,69 +761,15 @@ Eğer mesaj Kürtçe ise Kürtçe cevap ver, Türkçe ise Türkçe cevap ver.
         print(f"💬 Toplam konuşma: {self.istatistik['toplam_konusma']}")
         print(f"🎭 Mod: {self.modlar[self.kisilik['mod']]}")
         print("="*60)
+        print("📝 Kullanım:")
+        print("  • /mod normal - Mod değiştir")
+        print("  • /dogumgunu 15.05 - Doğum günü kaydet")
+        print("  • /oyun zar - Oyun oyna")
+        print("  • /rapor - Günlük rapor (admin)")
+        print("  • Normal mesajlarınızda AI ile sohbet!")
+        print("="*60)
         
         app.run_polling()
-    
-    # Komut fonksiyonları
-    async def mod_komutu(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
-        """Mod değiştirme komutu"""
-        if not context.args:
-            modlar_list = ", ".join(self.modlar.keys())
-            await update.message.reply_text(f"Kullanılabilir modlar: {modlar_list}")
-            return
-        
-        mod = context.args[0].lower()
-        if mod in self.modlar:
-            self.kisilik['mod'] = mod
-            self.dosya_kaydet(self.kisilik_file, self.kisilik)
-            await update.message.reply_text(f"Mod {self.modlar[mod]} olarak değiştirildi! 😊")
-        else:
-            await update.message.reply_text("❌ Böyle bir mod yok!")
-    
-    async def dogumgunu_komutu(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
-        """Doğum günü kaydetme komutu"""
-        if not context.args:
-            await update.message.reply_text("📝 Örnek: /dogumgunu 15.05")
-            return
-        
-        tarih = context.args[0]
-        self.dogumgunleri[str(update.effective_user.id)] = tarih
-        self.dosya_kaydet(self.dogumgunleri_file, self.dogumgunleri)
-        await update.message.reply_text(f"🎂 Doğum günün {tarih} olarak kaydedildi!")
-    
-    async def rapor_komutu(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
-        """Günlük rapor (sadece admin)"""
-        if update.effective_user.id != ADMIN_ID:
-            await update.message.reply_text("⛔ Bu komutu sadece admin kullanabilir!")
-            return
-        
-        rapor = f"""
-📊 **GÜNLÜK RAPOR**
-👥 Bugün konuşan: {len(self.bugun_konusan)} kişi
-💬 Toplam mesaj: {self.bugun_mesaj}
-🔥 En aktif saat: {max(self.istatistik['aktif_saatler'], key=self.istatistik['aktif_saatler'].get)}:00
-📈 Toplam konuşma: {self.istatistik['toplam_konusma']}
-🧠 Tanınan kişi: {len(self.profiller)}
-🎭 Şu anki mod: {self.modlar[self.kisilik['mod']]}
-"""
-        await update.message.reply_text(rapor)
-    
-    async def oyun_komutu(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
-        """Oyun oynama komutu"""
-        if not context.args:
-            oyun_list = ", ".join(self.oyunlar.keys())
-            await update.message.reply_text(f"Oynayabileceğimiz oyunlar: {oyun_list}. Hangisini istersin? 🎮")
-            return
-        
-        oyun = context.args[0].lower()
-        if oyun == "yazı_tura" or oyun == "yazı tura":
-            await update.message.reply_text(f"Sonuç: {self.oyunlar['yazı_tura']()} 🪙")
-        elif oyun == "zar":
-            await update.message.reply_text(f"Zar: {self.oyunlar['zar']()} 🎲")
-        elif oyun == "taş_kağıt_makas" or oyun == "tkm":
-            await update.message.reply_text(f"Ben: {self.oyunlar['taş_kağıt_makas']()} ✨")
-        else:
-            await update.message.reply_text("❌ Bilinmeyen oyun!")
 
 
 # ==================== BAŞLAT ====================
