@@ -23,22 +23,7 @@ logging.basicConfig(
     format='%(asctime)s - %(name)s - %(levelname)s - %(message)s'
 )
 logger = logging.getLogger(__name__)
-# ==================== GEMİNİ TEST ====================
-print("🔧 Gemini test başlıyor...")
-print(f"GEMINI_KEY var mı: {'EVET' if GEMINI_KEY else 'HAYIR'}")
-if GEMINI_KEY:
-    print(f"GEMINI_KEY uzunluğu: {len(GEMINI_KEY)}")
-    print(f"GEMINI_KEY ilk 10 karakter: {GEMINI_KEY[:10]}...")
 
-try:
-    import google.generativeai as genai
-    genai.configure(api_key=GEMINI_KEY)
-    model = genai.GenerativeModel('gemini-pro')
-    response = model.generate_content("Merhaba, 2+2 kaç?")
-    print(f"✅ Gemini BAŞARILI! Cevap: {response.text}")
-except Exception as e:
-    print(f"❌ Gemini HATASI: {e}")
-# =================================================
 # ==================== RONDK ====================
 class RondkBot:
     def __init__(self):
@@ -66,7 +51,8 @@ class RondkBot:
         try:
             if GEMINI_KEY:
                 genai.configure(api_key=GEMINI_KEY)
-                self.model = genai.GenerativeModel('models/gemini-1.5-pro')
+                # Yeni model adı (gemini-1.5-flash)
+                self.model = genai.GenerativeModel('models/gemini-1.5-flash')
                 logger.info("✅ Gemini başarıyla ayarlandı")
                 
                 # Test mesajı
@@ -122,7 +108,7 @@ class RondkBot:
         return False
     
     async def gemini_cevap_al(self, prompt):
-        """Gemini'den cevap al (DÜZELTİLDİ)"""
+        """Gemini'den cevap al"""
         if not self.model:
             logger.error("❌ Gemini modeli hazır değil!")
             return None
@@ -194,7 +180,7 @@ Kısa ve doğal bir cevap ver (sakın bot olduğunu belli etme):
             }
             self.dosya_kaydet(self.konusmalar_file, self.konusmalar)
         else:
-            logger.error("❌ Cevap alınamadı")
+            logger.error("❌ Cevap alınamadı, hazır cevap veriliyor")
             # Gemini çalışmazsa basit cevap ver
             basit_cevaplar = [
                 "Slaw, çonî?",
